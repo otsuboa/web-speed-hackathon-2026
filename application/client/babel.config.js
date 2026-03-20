@@ -4,8 +4,7 @@ module.exports = {
     [
       "@babel/preset-env",
       {
-        targets: "ie 11",
-        corejs: "3",
+        targets: "last 2 Chrome versions",
         modules: false,
         useBuiltIns: false,
       },
