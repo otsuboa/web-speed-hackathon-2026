@@ -32,12 +32,16 @@ crokRouter.get("/crok", async (req, res) => {
   res.flushHeaders();
 
   let messageId = 0;
+  const CHUNK_SIZE = 100;
 
-  for (const char of response) {
+  for (let i = 0; i < response.length; i += CHUNK_SIZE) {
     if (res.closed) break;
 
-    const data = JSON.stringify({ text: char, done: false });
+    const chunk = response.slice(i, i + CHUNK_SIZE);
+    const data = JSON.stringify({ text: chunk, done: false });
     res.write(`event: message\nid: ${messageId++}\ndata: ${data}\n\n`);
+
+    await sleep(10);
   }
 
   if (!res.closed) {

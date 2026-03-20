@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 interface SSEOptions<T> {
   onMessage: (data: T, prevContent: string) => string;
@@ -19,12 +19,28 @@ export function useSSE<T>(options: SSEOptions<T>): ReturnValues {
   const [isStreaming, setIsStreaming] = useState(false);
   const eventSourceRef = useRef<EventSource | null>(null);
   const contentRef = useRef("");
+  const rafRef = useRef<number>(0);
+  const dirtyRef = useRef(false);
+
+  useEffect(() => {
+    const flush = () => {
+      if (dirtyRef.current) {
+        setContent(contentRef.current);
+        dirtyRef.current = false;
+      }
+      rafRef.current = requestAnimationFrame(flush);
+    };
+    rafRef.current = requestAnimationFrame(flush);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, []);
 
   const stop = useCallback(() => {
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
       eventSourceRef.current = null;
     }
+    setContent(contentRef.current);
+    dirtyRef.current = false;
     setIsStreaming(false);
   }, []);
 
@@ -54,9 +70,8 @@ export function useSSE<T>(options: SSEOptions<T>): ReturnValues {
           return;
         }
 
-        const newContent = options.onMessage(data, contentRef.current);
-        contentRef.current = newContent;
-        setContent(newContent);
+        contentRef.current = options.onMessage(data, contentRef.current);
+        dirtyRef.current = true;
       };
 
       eventSource.onerror = (error) => {
