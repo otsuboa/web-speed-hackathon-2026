@@ -80,13 +80,11 @@ export const PausableMovie = ({ src }: Props) => {
   return (
     <div ref={containerRef} className="relative w-full" style={{ aspectRatio: "1 / 1" }}>
       {data !== null ? (
-        <div
+        <button
           aria-label="動画プレイヤー"
-          role="button"
-          tabIndex={0}
-          className="group relative block h-full w-full cursor-pointer"
-          onClick={(e) => { e.stopPropagation(); handleClick(); }}
-          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleClick(); } }}
+          className="group relative block h-full w-full"
+          onClick={handleClick}
+          type="button"
         >
           <canvas ref={canvasCallbackRef} className="w-full" />
           <div
@@ -99,7 +97,7 @@ export const PausableMovie = ({ src }: Props) => {
           >
             <FontAwesomeIcon iconType={isPlaying ? "pause" : "play"} styleType="solid" />
           </div>
-        </div>
+        </button>
       ) : null}
     </div>
   );
