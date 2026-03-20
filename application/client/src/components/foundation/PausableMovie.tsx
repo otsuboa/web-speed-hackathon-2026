@@ -27,24 +27,25 @@ export const PausableMovie = ({ src }: Props) => {
         return;
       }
 
-      // GIF を解析する
-      const reader = new GifReader(new Uint8Array(data));
-      const frames = Decoder.decodeFramesSync(reader);
-      const animator = new Animator(reader, frames);
+      // メインスレッドを解放してから GIF を解析する
+      setTimeout(() => {
+        const reader = new GifReader(new Uint8Array(data));
+        const frames = Decoder.decodeFramesSync(reader);
+        const animator = new Animator(reader, frames);
 
-      animator.animateInCanvas(el);
-      animator.onFrame(frames[0]!);
+        animator.animateInCanvas(el);
+        animator.onFrame(frames[0]!);
 
-      // 視覚効果 off のとき GIF を自動再生しない
-      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-        setIsPlaying(false);
-        animator.stop();
-      } else {
-        setIsPlaying(true);
-        animator.start();
-      }
+        if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+          setIsPlaying(false);
+          animator.stop();
+        } else {
+          setIsPlaying(true);
+          animator.start();
+        }
 
-      animatorRef.current = animator;
+        animatorRef.current = animator;
+      }, 0);
     },
     [data],
   );
