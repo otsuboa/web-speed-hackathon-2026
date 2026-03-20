@@ -29,5 +29,11 @@ staticRouter.use(
   serveStatic(CLIENT_DIST_PATH, {
     maxAge: "1y",
     immutable: true,
+    setHeaders(res, filePath) {
+      // HTML はキャッシュしない（古い index.html がバンドル参照ミスで白画面になる）
+      if (filePath.endsWith(".html")) {
+        res.setHeader("Cache-Control", "no-cache");
+      }
+    },
   }),
 );
