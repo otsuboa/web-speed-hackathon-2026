@@ -65,15 +65,21 @@ export const DirectMessageContainer = ({ activeUser, authModalId }: Props) => {
     async (params: DirectMessageFormData) => {
       setIsSubmitting(true);
       try {
-        await sendJSON(`/api/v1/dm/${conversationId}/messages`, {
-          body: params.body,
+        const message = await sendJSON<Models.DirectMessage>(
+          `/api/v1/dm/${conversationId}/messages`,
+          { body: params.body },
+        );
+        // POST レスポンスの message を直接 state に追加（楽観的更新）
+        // WS の afterSave イベントで後から loadConversation() が走り最終的にサーバー状態と同期
+        setConversation((prev) => {
+          if (!prev) return prev;
+          return { ...prev, messages: [...prev.messages, message] };
         });
-        loadConversation();
       } finally {
         setIsSubmitting(false);
       }
     },
-    [conversationId, loadConversation],
+    [conversationId],
   );
 
   const handleTyping = useCallback(async () => {
