@@ -147,7 +147,47 @@ directMessageRouter.get("/dm/:conversationId", async (req, res) => {
     throw new httpErrors.Unauthorized();
   }
 
-  const conversation = await DirectMessageConversation.findOne({
+  // defaultScope を外し、メッセージを最新50件に制限
+  const conversation = await DirectMessageConversation.unscoped().findOne({
+    where: {
+      id: req.params.conversationId,
+      [Op.or]: [{ initiatorId: req.session.userId }, { memberId: req.session.userId }],
+    },
+    include: [
+      { association: "initiator", include: [{ association: "profileImage" }] },
+      { association: "member", include: [{ association: "profileImage" }] },
+    ],
+  });
+  if (conversation === null) {
+    throw new httpErrors.NotFound();
+  }
+
+  const DM_PAGE_SIZE = 50;
+  const totalCount = await DirectMessage.unscoped().count({
+    where: { conversationId: conversation.id },
+  });
+  const messages = await DirectMessage.unscoped().findAll({
+    where: { conversationId: conversation.id },
+    include: [{ association: "sender", include: [{ association: "profileImage" }] }],
+    order: [["createdAt", "DESC"]],
+    limit: DM_PAGE_SIZE,
+  });
+  messages.reverse();
+
+  const result = conversation.toJSON();
+  result.messages = messages.map((m) => m.toJSON());
+  result.hasMoreMessages = totalCount > DM_PAGE_SIZE;
+
+  return res.status(200).type("application/json").send(result);
+});
+
+// 古いメッセージの追加読み込み
+directMessageRouter.get("/dm/:conversationId/messages", async (req, res) => {
+  if (req.session.userId === undefined) {
+    throw new httpErrors.Unauthorized();
+  }
+
+  const conversation = await DirectMessageConversation.unscoped().findOne({
     where: {
       id: req.params.conversationId,
       [Op.or]: [{ initiatorId: req.session.userId }, { memberId: req.session.userId }],
@@ -157,7 +197,19 @@ directMessageRouter.get("/dm/:conversationId", async (req, res) => {
     throw new httpErrors.NotFound();
   }
 
-  return res.status(200).type("application/json").send(conversation);
+  const limit = req.query["limit"] != null ? Number(req.query["limit"]) : 50;
+  const offset = req.query["offset"] != null ? Number(req.query["offset"]) : 0;
+
+  const messages = await DirectMessage.unscoped().findAll({
+    where: { conversationId: conversation.id },
+    include: [{ association: "sender", include: [{ association: "profileImage" }] }],
+    order: [["createdAt", "DESC"]],
+    limit,
+    offset,
+  });
+  messages.reverse();
+
+  return res.status(200).type("application/json").send(messages.map((m) => m.toJSON()));
 });
 
 directMessageRouter.ws("/dm/:conversationId", async (req, _res) => {

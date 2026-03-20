@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Helmet } from "react-helmet";
 import { useParams } from "react-router";
 
@@ -31,6 +31,8 @@ export const DirectMessageContainer = ({ activeUser, authModalId }: Props) => {
   const [conversation, setConversation] = useState<Models.DirectMessageConversation | null>(null);
   const [conversationError, setConversationError] = useState<Error | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [hasMoreMessages, setHasMoreMessages] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
 
   const [isPeerTyping, setIsPeerTyping] = useState(false);
   const peerTypingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -41,9 +43,10 @@ export const DirectMessageContainer = ({ activeUser, authModalId }: Props) => {
     }
 
     try {
-      const data = await fetchJSON<Models.DirectMessageConversation>(
+      const data = await fetchJSON<Models.DirectMessageConversation & { hasMoreMessages?: boolean }>(
         `/api/v1/dm/${conversationId}`,
       );
+      setHasMoreMessages(data.hasMoreMessages ?? false);
       setConversation(data);
       setConversationError(null);
     } catch (error) {
@@ -82,22 +85,67 @@ export const DirectMessageContainer = ({ activeUser, authModalId }: Props) => {
     [conversationId],
   );
 
-  const handleTyping = useCallback(async () => {
-    void sendJSON(`/api/v1/dm/${conversationId}/typing`, {});
+  const loadMoreMessages = useCallback(async () => {
+    if (!conversation || isLoadingMore || !hasMoreMessages) return;
+    setIsLoadingMore(true);
+    try {
+      const olderMessages = await fetchJSON<Models.DirectMessage[]>(
+        `/api/v1/dm/${conversationId}/messages?limit=50&offset=${conversation.messages.length}`,
+      );
+      if (olderMessages.length === 0) {
+        setHasMoreMessages(false);
+      } else {
+        setConversation((prev) => {
+          if (!prev) return prev;
+          return { ...prev, messages: [...olderMessages, ...prev.messages] };
+        });
+        if (olderMessages.length < 50) {
+          setHasMoreMessages(false);
+        }
+      }
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [conversation, conversationId, isLoadingMore, hasMoreMessages]);
+
+  const handleTyping = useMemo(() => {
+    let lastSent = 0;
+    return () => {
+      const now = Date.now();
+      if (now - lastSent < 1000) return;
+      lastSent = now;
+      void sendJSON(`/api/v1/dm/${conversationId}/typing`, {});
+    };
   }, [conversationId]);
 
   useWs(`/api/v1/dm/${conversationId}`, (event: DmUpdateEvent | DmTypingEvent) => {
     if (event.type === "dm:conversation:message") {
-      void loadConversation().then(() => {
-        if (event.payload.sender.id !== activeUser?.id) {
-          setIsPeerTyping(false);
-          if (peerTypingTimeoutRef.current !== null) {
-            clearTimeout(peerTypingTimeoutRef.current);
-          }
-          peerTypingTimeoutRef.current = null;
+      const message = event.payload;
+      if (message.sender?.id === activeUser?.id) {
+        // 自分のメッセージ: 楽観的更新済み → isRead の更新だけ反映
+        setConversation((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            messages: prev.messages.map((m) =>
+              m.id === message.id ? { ...m, isRead: message.isRead } : m,
+            ),
+          };
+        });
+      } else {
+        // 相手のメッセージ: state に追加（重複防止）
+        setConversation((prev) => {
+          if (!prev) return prev;
+          if (prev.messages.some((m) => m.id === message.id)) return prev;
+          return { ...prev, messages: [...prev.messages, message] };
+        });
+        setIsPeerTyping(false);
+        if (peerTypingTimeoutRef.current !== null) {
+          clearTimeout(peerTypingTimeoutRef.current);
         }
-      });
-      void sendRead();
+        peerTypingTimeoutRef.current = null;
+        void sendRead();
+      }
     } else if (event.type === "dm:conversation:typing") {
       setIsPeerTyping(true);
       if (peerTypingTimeoutRef.current !== null) {
@@ -141,6 +189,8 @@ export const DirectMessageContainer = ({ activeUser, authModalId }: Props) => {
         isPeerTyping={isPeerTyping}
         isSubmitting={isSubmitting}
         onSubmit={handleSubmit}
+        hasMoreMessages={hasMoreMessages}
+        onLoadMore={loadMoreMessages}
       />
     </>
   );

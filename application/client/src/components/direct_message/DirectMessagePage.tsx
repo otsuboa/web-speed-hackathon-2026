@@ -21,8 +21,10 @@ interface Props {
   activeUser: Models.User;
   isPeerTyping: boolean;
   isSubmitting: boolean;
+  hasMoreMessages: boolean;
   onTyping: () => void;
   onSubmit: (params: DirectMessageFormData) => Promise<void>;
+  onLoadMore: () => void;
 }
 
 export const DirectMessagePage = ({
@@ -31,8 +33,10 @@ export const DirectMessagePage = ({
   activeUser,
   isPeerTyping,
   isSubmitting,
+  hasMoreMessages,
   onTyping,
   onSubmit,
+  onLoadMore,
 }: Props) => {
   const formRef = useRef<HTMLFormElement>(null);
   const textAreaId = useId();
@@ -43,7 +47,6 @@ export const DirectMessagePage = ({
   const [text, setText] = useState("");
   const textAreaRows = Math.min((text || "").split("\n").length, 5);
   const isInvalid = text.trim().length === 0;
-  const scrollHeightRef = useRef(0);
 
   const handleChange = useCallback(
     (event: ChangeEvent<HTMLTextAreaElement>) => {
@@ -73,19 +76,79 @@ export const DirectMessagePage = ({
     [onSubmit, text],
   );
 
+  // --- scroll-to-bottom & load-more ---
+  const isLoadingOlderRef = useRef(false);
+  const isReadyRef = useRef(false);
+  const onLoadMoreRef = useRef(onLoadMore);
+  onLoadMoreRef.current = onLoadMore;
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
+  // メッセージ数が変わった時のスクロール制御
   useEffect(() => {
-    let rafId: number;
+    if (isLoadingOlderRef.current) {
+      isLoadingOlderRef.current = false;
+      // ページがまだスクロール不要なら自動で追加読み込み
+      requestAnimationFrame(() => {
+        if (document.body.scrollHeight <= window.innerHeight && hasMoreMessages) {
+          onLoadMoreRef.current();
+          isLoadingOlderRef.current = true;
+        } else {
+          isReadyRef.current = true;
+        }
+      });
+      return;
+    }
+    // 最下部へスクロールし、完了後に load-more を有効化
+    requestAnimationFrame(() => {
+      window.scrollTo(0, document.body.scrollHeight);
+      setTimeout(() => {
+        // ページがスクロール不要なら自動で追加読み込み（ビューポートを埋めるまで繰り返す）
+        if (document.body.scrollHeight <= window.innerHeight && hasMoreMessages) {
+          isLoadingOlderRef.current = true;
+          onLoadMoreRef.current();
+        } else {
+          isReadyRef.current = true;
+        }
+      }, 100);
+    });
+  }, [conversation.messages.length, hasMoreMessages]);
+
+  // センチネルが viewport に入ったら古いメッセージを読み込む（ポーリング方式）
+  useEffect(() => {
+    if (!hasMoreMessages) return;
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+
     const check = () => {
-      const height = Number(window.getComputedStyle(document.body).height.replace("px", ""));
-      if (height !== scrollHeightRef.current) {
-        scrollHeightRef.current = height;
-        window.scrollTo(0, height);
+      if (!isReadyRef.current) return;
+      const rect = sentinel.getBoundingClientRect();
+      // センチネルがビューポート内（上端 + 200px マージン）にあるか
+      if (rect.top < window.innerHeight && rect.bottom > -200) {
+        isReadyRef.current = false;
+
+        const prevHeight = document.body.scrollHeight;
+        isLoadingOlderRef.current = true;
+        onLoadMoreRef.current();
+
+        // DOM 更新を待ってスクロール位置を補正
+        const checkDom = () => {
+          requestAnimationFrame(() => {
+            const newHeight = document.body.scrollHeight;
+            if (newHeight > prevHeight) {
+              window.scrollTo(0, newHeight - prevHeight + window.scrollY);
+              setTimeout(() => { isReadyRef.current = true; }, 100);
+            } else {
+              requestAnimationFrame(checkDom);
+            }
+          });
+        };
+        checkDom();
       }
-      rafId = requestAnimationFrame(check);
     };
-    rafId = requestAnimationFrame(check);
-    return () => cancelAnimationFrame(rafId);
-  }, []);
+
+    const interval = setInterval(check, 200);
+    return () => clearInterval(interval);
+  }, [hasMoreMessages, conversation.messages.length]);
 
   if (conversationError != null) {
     return (
@@ -114,7 +177,8 @@ export const DirectMessagePage = ({
         </div>
       </header>
 
-      <div className="bg-cax-surface-subtle flex-1 space-y-4 overflow-y-auto px-4 pt-4 pb-8">
+      <div className="bg-cax-surface-subtle flex-1 space-y-4 px-4 pt-4 pb-8">
+        {hasMoreMessages ? <div ref={sentinelRef} className="h-px" /> : null}
         {conversation.messages.length === 0 && (
           <p className="text-cax-text-muted text-center text-sm">
             まだメッセージはありません。最初のメッセージを送信してみましょう。
