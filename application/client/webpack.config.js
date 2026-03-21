@@ -44,7 +44,7 @@ const config = {
       {
         test: /\.css$/i,
         use: [
-          { loader: MiniCssExtractPlugin.loader },
+          { loader: "style-loader" },
           { loader: "css-loader", options: { url: false } },
           { loader: "postcss-loader" },
         ],
