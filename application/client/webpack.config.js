@@ -79,7 +79,7 @@ const config = {
       patterns: [
         {
           from: path.resolve(__dirname, "node_modules/katex/dist/fonts"),
-          to: path.resolve(DIST_PATH, "styles/fonts"),
+          to: path.resolve(DIST_PATH, "fonts"),
         },
       ],
     }),
