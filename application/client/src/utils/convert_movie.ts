@@ -21,7 +21,7 @@ export async function convertMovie(file: File, options: Options): Promise<Blob> 
 
   await ffmpeg.writeFile("file", new Uint8Array(await file.arrayBuffer()));
 
-  await ffmpeg.exec([
+  const args = [
     "-i",
     "file",
     "-t",
@@ -31,8 +31,16 @@ export async function convertMovie(file: File, options: Options): Promise<Blob> 
     "-vf",
     `crop=${cropOptions}`,
     "-an",
-    exportFile,
-  ]);
+  ];
+
+  // MP4 出力時はブラウザ互換のピクセルフォーマットを指定
+  if (options.extension === "mp4") {
+    args.push("-pix_fmt", "yuv420p", "-preset", "ultrafast", "-movflags", "+faststart");
+  }
+
+  args.push(exportFile);
+
+  await ffmpeg.exec(args);
 
   const output = (await ffmpeg.readFile(exportFile)) as Uint8Array<ArrayBuffer>;
 

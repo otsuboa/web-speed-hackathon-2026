@@ -1,5 +1,5 @@
 import classNames from "classnames";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { FontAwesomeIcon } from "@web-speed-hackathon-2026/client/src/components/foundation/FontAwesomeIcon";
 import { useInViewport } from "@web-speed-hackathon-2026/client/src/hooks/use_in_viewport";
@@ -15,6 +15,14 @@ interface Props {
 export const PausableMovie = ({ src }: Props) => {
   const [containerRef, isInViewport] = useInViewport("200px");
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  // マウント後しばらくはボタンのクリックを透過させる
+  // （タイムラインで article クリック→遷移を優先するため）
+  const [isInteractive, setIsInteractive] = useState(false);
+  useEffect(() => {
+    const id = setTimeout(() => setIsInteractive(true), 500);
+    return () => clearTimeout(id);
+  }, []);
 
   const [isPlaying, setIsPlaying] = useState(true);
   const handleClick = useCallback(() => {
@@ -32,7 +40,9 @@ export const PausableMovie = ({ src }: Props) => {
     <div ref={containerRef} className="relative w-full" style={{ aspectRatio: "1 / 1" }}>
       <button
         aria-label="動画プレイヤー"
-        className="group relative block h-full w-full"
+        className={classNames("group relative block h-full w-full", {
+          "pointer-events-none": !isInteractive,
+        })}
         onClick={handleClick}
         type="button"
       >
